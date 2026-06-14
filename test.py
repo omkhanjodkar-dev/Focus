@@ -1,159 +1,149 @@
 import win32con
+import ctypes
 import win32gui
-import tkinter as tk
+import customtkinter as ctk
+from CTkMessagebox import CTkMessagebox as ctkmsg
 
+# Assuming this is your external logic module
+from a import Application 
 
-class Application:
-    def __init__(self, target):
-        self.TARGET = target
-        self.BG_COLOR = '#000000'
-        self._original_state: dict = {}   # hwnd -> saved state
+class Software:
+    def __init__(self):
+        # 1. Core Variables
+        self.DWMWA_CLOAKED = 14
+        self.target = []
+        self.open_wins = {}
+        self.checkbox_vars = {} # To keep track of checkbox states
+        
+        # 2. Main Window Setup
+        ctk.set_appearance_mode("System")
+        ctk.set_default_color_theme("blue")
+        
+        self.root = ctk.CTk()
+        self.root.title("Focus Mode")
+        self.root.geometry("500x400")
+        
+        # Center the grid content
+        self.root.grid_columnconfigure(0, weight=1)
+        self.root.grid_rowconfigure((0, 1, 2, 3, 4, 5), weight=1)
 
-        self.root = tk.Tk()
-        dims = (self.root.winfo_screenwidth(), self.root.winfo_screenheight())
-        self.root.title("Parent")
-        self.root.geometry(f"{dims[0]}x{dims[1]}")
-        self.root.attributes("-topmost", True)
-        self.root.attributes("-fullscreen", True)
+        # 3. Build UI Elements
+        self._build_ui()
+        
+        self.root.mainloop()
 
-        # protocol is the correct hook — <Destroy> fires for every widget
-        self.root.protocol("WM_DELETE_WINDOW", self.quit)
-        self.root.bind("<Control-KeyPress-q>", lambda event: self.quit())
+    def _build_ui(self):
+        """Builds the main user interface."""
+        # Header
+        header = ctk.CTkLabel(self.root, text="Focus", font=ctk.CTkFont(family="Times New Roman", size=42, weight="bold"))
+        header.grid(row=0, column=0, pady=(30, 10))
 
-        self.quitButton = tk.Button(self.root, text="Quit", command=self.quit)
-        self.quitButton.pack()
+        # Time Input Frame
+        time_frame = ctk.CTkFrame(self.root, fg_color="transparent")
+        time_frame.grid(row=1, column=0, pady=10)
+        
+        time_lbl = ctk.CTkLabel(time_frame, text="Duration (Minutes):", font=ctk.CTkFont(size=16))
+        time_lbl.pack(side="left", padx=(0, 10))
+        
+        self.time_prompt = ctk.CTkEntry(time_frame, width=100, font=ctk.CTkFont(size=16), placeholder_text="e.g. 30")
+        self.time_prompt.pack(side="left")
 
-        self.holder = tk.Frame(
-            self.root, width=dims[0], height=dims[1] - 200, bg=self.BG_COLOR
-        )
-        self.holder.pack(fill=tk.BOTH, expand=True)
+        # Selection Status Label
+        self.status_lbl = ctk.CTkLabel(self.root, text="0 windows selected", font=ctk.CTkFont(size=14, slant="italic"), text_color="gray")
+        self.status_lbl.grid(row=2, column=0, pady=(10, 0))
 
-        # Flush all pending geometry so holder.winfo_id() is valid
-        self.root.update_idletasks()
-        self.root.update()
+        # Select Windows Button
+        select_btn = ctk.CTkButton(self.root, text="Select Target Windows", command=self.open_selection_dialog, font=ctk.CTkFont(size=16))
+        select_btn.grid(row=3, column=0, pady=10)
 
-        # Defer adoption until after the event loop starts
-        self.root.after(100, self.processWindow)
+        # Start Button (Distinct color to indicate primary action)
+        start_btn = ctk.CTkButton(self.root, text="START FOCUS", command=self.start_focus, 
+                                  font=ctk.CTkFont(size=18, weight="bold"), 
+                                  fg_color="#28a745", hover_color="#218838")
+        start_btn.grid(row=4, column=0, pady=(20, 30))
 
-        try:
-            self.root.mainloop()
-        except KeyboardInterrupt:          # must come before Exception
-            self.quit()
-        except Exception as e:
-            print(f"Mainloop error: {e}")
-            self.quit()
+    # --- WINDOWS API LOGIC ---
+    def getWins(self, hwnd, ctx):
+        cloaked = ctypes.c_int(0)
+        ctypes.windll.dwmapi.DwmGetWindowAttribute(hwnd, self.DWMWA_CLOAKED, ctypes.byref(cloaked), ctypes.sizeof(cloaked))
+        ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+        
+        if (win32gui.IsWindowVisible(hwnd) and 
+            win32gui.GetWindowText(hwnd).strip() != "" and 
+            cloaked.value == 0 and 
+            not (ex_style & win32con.WS_EX_TOOLWINDOW)):
+            
+            self.open_wins[win32gui.GetWindowText(hwnd)] = hwnd
 
-    # ------------------------------------------------------------------ #
-    def getTargetHWND(self, partial_title: str) -> int:
-        matched: list = []
+    def getWindows(self):
+        self.open_wins.clear() # Clear old list before re-fetching
+        win32gui.EnumWindows(self.getWins, None)
 
-        def _cb(hwnd, _):
-            if win32gui.IsWindowVisible(hwnd):
-                if partial_title.lower() in win32gui.GetWindowText(hwnd).lower():
-                    matched.append(hwnd)
+    # --- UI EVENT HANDLERS ---
+    def open_selection_dialog(self):
+        self.getWindows()
+        
+        # Create a fixed-size popup window
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title('Select Windows')
+        dialog.geometry('550x500')
+        dialog.grab_set() # Forces focus on this popup
+        
+        lbl = ctk.CTkLabel(dialog, text='Select the applications you need for this session:', font=ctk.CTkFont(size=16))
+        lbl.pack(pady=(20, 10))
+        
+        # Scrollable frame for checkboxes
+        scroll_frame = ctk.CTkScrollableFrame(dialog, width=500, height=350)
+        scroll_frame.pack(padx=20, pady=10, fill="both", expand=True)
+        
+        self.checkbox_vars.clear()
+        
+        # Populate with checkboxes
+        for win_name, hwnd in self.open_wins.items():
+            # Check if this window was already selected previously
+            is_selected = hwnd in self.target
+            var = ctk.BooleanVar(value=is_selected)
+            self.checkbox_vars[hwnd] = var
+            
+            # Truncate long names for the UI
+            disp_name = win_name[:65] + "..." if len(win_name) > 65 else win_name
+            
+            cb = ctk.CTkCheckBox(scroll_frame, text=disp_name, variable=var, font=ctk.CTkFont(size=14))
+            cb.pack(anchor="w", pady=6, padx=10)
+            
+        # Confirm Button
+        confirm_btn = ctk.CTkButton(dialog, text="Confirm Selection", command=lambda: self.save_selection(dialog))
+        confirm_btn.pack(pady=(10, 20))
 
-        win32gui.EnumWindows(_cb, None)
-        if not matched:
-            raise RuntimeError(f"No visible window found matching: {partial_title!r}")
-        return matched[0]
+    def save_selection(self, dialog):
+        """Saves checked items into self.target and updates the UI."""
+        self.target = [hwnd for hwnd, var in self.checkbox_vars.items() if var.get()]
+        
+        # Update main window text
+        count = len(self.target)
+        text_color = "gray" if count == 0 else "#28a745" # Green if windows are selected
+        self.status_lbl.configure(text=f"{count} window(s) selected", text_color=text_color)
+        
+        dialog.destroy()
 
-    # ------------------------------------------------------------------ #
-    def _save_state(self, hwnd: int) -> None:
-        """Snapshot everything we will change so quit() can fully restore it."""
-        self._original_state[hwnd] = {
-            "parent":    win32gui.GetParent(hwnd),
-            "style":     win32gui.GetWindowLong(hwnd, win32con.GWL_STYLE),
-            "exstyle":   win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE),
-            "placement": win32gui.GetWindowPlacement(hwnd),
-        }
-
-    def setChild(self, hwnd: int) -> None:
-        self._save_state(hwnd)
-
-        # Strip styles that conflict with WS_CHILD
-        STRIP = (
-            win32con.WS_POPUP       |
-            win32con.WS_CAPTION     |
-            win32con.WS_THICKFRAME  |
-            win32con.WS_MINIMIZEBOX |
-            win32con.WS_MAXIMIZEBOX |
-            win32con.WS_SYSMENU
-        )
-        style = win32gui.GetWindowLong(hwnd, win32con.GWL_STYLE)
-        style = (style & ~STRIP) | win32con.WS_CHILD | win32con.WS_VISIBLE
-        win32gui.SetWindowLong(hwnd, win32con.GWL_STYLE, style)
-
-        # Remove the taskbar-button flag; it's meaningless for a child window
-        exstyle = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
-        exstyle &= ~win32con.WS_EX_APPWINDOW
-        win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, exstyle)
-
-        win32gui.SetParent(hwnd, self.holder.winfo_id())
-
-        # SWP_FRAMECHANGED forces Win32 to recalculate the non-client area;
-        # without it the style change exists in memory but isn't applied visually.
-        w, h = self.holder.winfo_width(), self.holder.winfo_height()
-        win32gui.SetWindowPos(
-            hwnd, 0, 0, 0, w, h,
-            win32con.SWP_NOZORDER |
-            win32con.SWP_FRAMECHANGED |
-            win32con.SWP_SHOWWINDOW
-        )
-
-    # ------------------------------------------------------------------ #
-    def _restore_window(self, hwnd: int) -> None:
-        """Fully undo adoption, returning the window to its original state."""
-        state = self._original_state.pop(hwnd, None)
-
-        if state is None:
-            # Fallback: we have no record — do a best-effort detach
-            win32gui.SetParent(hwnd, 0)
-            style = win32gui.GetWindowLong(hwnd, win32con.GWL_STYLE)
-            style = (style & ~win32con.WS_CHILD) | win32con.WS_OVERLAPPEDWINDOW
-            win32gui.SetWindowLong(hwnd, win32con.GWL_STYLE, style)
-            win32gui.SetWindowPos(
-                hwnd, 0, 100, 100, 800, 600,
-                win32con.SWP_NOZORDER | win32con.SWP_FRAMECHANGED | win32con.SWP_SHOWWINDOW
-            )
+    def start_focus(self):
+        """Validates inputs and triggers the main application logic."""
+        time_val = self.time_prompt.get().strip()
+        
+        if not self.target:
+            ctkmsg(title='Warning', message='Please select at least one window to focus on.', icon='warning', sound=True)
+            return
+            
+        if not time_val.isdigit():
+            ctkmsg(title='Warning', message='Please enter a valid number of minutes.', icon='warning', sound=True)
             return
 
-        # Restore styles before reparenting so the frame is recalculated correctly
-        win32gui.SetWindowLong(hwnd, win32con.GWL_STYLE,   state["style"])
-        win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, state["exstyle"])
-
-        original_parent = state["parent"] or 0   # 0 == desktop
-        win32gui.SetParent(hwnd, original_parent)
-
-        win32gui.SetWindowPos(
-            hwnd, 0, 0, 0, 0, 0,
-            win32con.SWP_NOMOVE   |
-            win32con.SWP_NOSIZE   |
-            win32con.SWP_NOZORDER |
-            win32con.SWP_FRAMECHANGED |
-            win32con.SWP_SHOWWINDOW
-        )
-        # Restore the exact size, position, and show-state
-        win32gui.SetWindowPlacement(hwnd, state["placement"])
-
-    # ------------------------------------------------------------------ #
-    def quit(self) -> None:
-        for hwnd in list(self._original_state):   # iterate a copy — dict mutates
-            try:
-                self._restore_window(hwnd)
-            except Exception as e:
-                print(f"Failed to restore hwnd {hwnd}: {e}")
-        try:
-            self.root.destroy()
-        except Exception:
-            pass
-
-    def processWindow(self) -> None:
-        for hwnd in self.TARGET:
-            try:
-                self.setChild(hwnd)
-            except Exception as e:
-                print(f"Failed to adopt hwnd {hwnd}: {e}")
-
+        # Hide the main window if desired (optional)
+        # self.root.iconify() 
+        
+        print(f"Starting Focus Mode for {time_val} minutes with {len(self.target)} app(s).")
+        # Uncomment when ready:
+        app = Application(self.target, time_val)
 
 if __name__ == "__main__":
-    Application([])
+    software = Software()
