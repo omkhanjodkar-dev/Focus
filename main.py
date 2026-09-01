@@ -13,7 +13,7 @@ def getTargetHWND(partial_title):
     win32gui.EnumWindows(win_enum_callback, None)
     return matched_windows[0][0]
 
-hwnd = getTargetHWND("chrome")
+hwnd = getTargetHWND("tp2")
 print(hwnd)
 
 style = win32gui.GetWindowLong(hwnd, win32con.GWL_STYLE)

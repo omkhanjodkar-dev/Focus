@@ -5,10 +5,15 @@ import win32gui
 import tkinter as tk
 import ctypes
 import time
+import sys
 
 
 class Application():
     def __init__(self, target, t):
+        self.state = True
+
+        self.running = True
+
         self.time_target = int(t)*60
         self.time_init = time.time()
 
@@ -69,6 +74,8 @@ class Application():
 
         self.root.after(300, lambda: self.poll(self.TARGET[0]))
 
+        self.root.after(300, self.animation)
+
         try:
             self.root.mainloop()
         except KeyboardInterrupt as e:
@@ -77,7 +84,7 @@ class Application():
             quit()
 
     def setFore(self, hwnd):
-        print("Command Recieved 'setFore'.")
+        print("setFore")
 
         f = win32gui.GetForegroundWindow()
         if not f:
@@ -110,8 +117,15 @@ class Application():
         if apple != pineapple:
             win32process.AttachThreadInput(apple, pineapple, False)
 
+    def contain(self):
+        x, y = win32api.GetCursorPos()
+        containing = self.root.winfo_containing(x, y)
+        return containing!=None
 
     def poll(self, last_good):
+        if not self.running:
+            return
+
         try:
             hwnd = win32gui.GetForegroundWindow()
 
@@ -135,15 +149,36 @@ class Application():
         except Exception as e:
             pass
         finally:
-            self.root.after(300, lambda prev=last_good: self.poll(prev))
+            try:
+                self.root.after(300, lambda prev=last_good: self.poll(prev))
+            except Exception as e:
+                pass
 
         try:
             if time.time() - self.time_init > self.time_target:
-                quit()
+                self.quit()
             self.time_disp.config(text=f"{int(self.time_target-(time.time()-self.time_init))}")
             self.time_disp.place_configure(relx=1-self.quitButton.winfo_width()/self.dims[0], rely=1/2, anchor="e")
         except Exception as e:
+            pass
+
+    def animation(self):
+        print("anim")
+        try:
+            if self.contain() and not self.state:
+                print("show")
+                self.state = True
+                self.root.geometry(f"{self.dims[0]}x{self.dims[1]}+0+0")
+                win32gui.SetWindowPos(self.root.winfo_id(), win32con.HWND_TOPMOST, 0, 0, self.dims[0], self.dims[1], win32con.SWP_FRAMECHANGED | win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW)
+            if not self.contain() and self.state:
+                print("collapse")
+                self.state = False
+                self.root.geometry(f"{self.dims[0]}x{1}+0+0")
+                win32gui.SetWindowPos(self.root.winfo_id(), win32con.HWND_TOPMOST, 0, 0, self.dims[0], 1, win32con.SWP_FRAMECHANGED | win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW)
+        except Exception as e:
             print(e)
+        finally:
+            self.root.after(100, self.animation)
 
     def all_white(self):
         for btn in self.WINDOW_BUTTONS:
@@ -181,7 +216,12 @@ class Application():
         win32gui.EnumWindows(win_enum_callback, None)
         return matched_windows[0][0]
     
+    def quit_helper(self):
+        self.running = False
+        self.quit()
+
     def quit(self):
+        print("quit")
         try:
             for hwnd in self.TARGET:
                 try:
@@ -194,10 +234,15 @@ class Application():
                     continue
                 # win32gui.SetWindowPos()
             self.root.destroy()
+            print("fine")
         except Exception as e:
             self.root.destroy()
+            print(e)
         except KeyboardInterrupt as e:
             self.root.destroy()
+            print(e)
+        finally:
+            self.root.quit()
     
     def setChild(self, hwnd):
         style = win32gui.GetWindowLong(hwnd, win32con.GWL_STYLE)
@@ -211,7 +256,7 @@ class Application():
             for i in self.TARGET:
                 self.setChild(i)
         except Exception as e:
-            print(e)
+            pass
     
 
 if "__main__" == __name__:
