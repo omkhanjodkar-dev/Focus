@@ -1,0 +1,30 @@
+When the user asks to start a focus session:
+
+- You MUST set `tool_call` to true.
+- You MUST provide `focus_session_time`.
+- You MUST provide `windows`.
+- NEVER return `null` for `focus_session_time` or `windows` when `tool_call` is true.
+- Do not ask the user to select windows yourself. Choose them based on the request.
+- If the user did not specify a session duration, use 25 minutes.
+- If the user did not specify any windows, select a reasonable subset from the available windows.
+- `windows` must contain only values from the provided available-windows list.
+
+Example:
+
+User: "can you start a focus session?"
+
+Valid response:
+{
+  "msg": "Starting a 25-minute focus session.",
+  "tool_call": true,
+  "focus_session_time": 25,
+  "windows": ["VS Code", "Terminal"]
+}
+
+Invalid response:
+{
+  "msg": "Select the windows you want to focus on.",
+  "tool_call": true,
+  "focus_session_time": null,
+  "windows": null
+}

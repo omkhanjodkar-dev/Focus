@@ -1,2 +1,2 @@
 cd /d "C:\Users\Om Khanjodkar\PycharmProjects\Focus"
-python "C:\Users\Om Khanjodkar\PycharmProjects\Focus\main.py"
+python "C:\Users\Om Khanjodkar\PycharmProjects\Focus\c.py"

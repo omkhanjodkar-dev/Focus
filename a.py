@@ -42,6 +42,9 @@ class Application():
         self.time_disp = tk.Label(self.root, text=f"{self.time_target*60}", bg="white", fg="black")
         self.time_disp.place(relx=1, anchor="e", rely=1/2)
 
+        self.chat = tk.Entry(self.root, bg="white", fg="black", width=100)
+        self.chat.place(relx=1/2, anchor="center", rely=1/2)
+
         relative_x = 0
         for t in self.TARGET:
             btn = tk.Button(self.root, text=win32gui.GetWindowText(t), bg="white", fg="black")
